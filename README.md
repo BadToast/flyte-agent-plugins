@@ -1,24 +1,107 @@
 # Flyte Agent Plugins
 
-A [Claude Code](https://docs.claude.com/en/docs/claude-code) plugin marketplace for
-working with [Flyte](https://flyte.org).
+A plugin marketplace for working with [Flyte](https://flyte.org) — in
+[Claude Code](https://docs.claude.com/en/docs/claude-code),
+[OpenAI Codex](https://developers.openai.com/plugins),
+[Google Antigravity](https://antigravity.google), or any agent harness that supports
+[Agent Skills](https://agentskills.io).
 
-Everything ships in a single `flyte` plugin: 14 skills, plus two **MCP servers** that let
-Claude search Flyte docs and act on your own cluster — see
-[Bundled MCP servers](#bundled-mcp-servers).
+21 skills, plus two **MCP servers** that let Claude search Flyte docs and act on your own
+cluster. `uvx flyte-skills install` gets you the skills in any harness;
+`uvx flyte-agent-plugins mcp install` adds the servers, and installing the `flyte` plugin
+gets you both at once — see [Bundled MCP servers](#bundled-mcp-servers).
 
 ## Install
+
+This guide assumes that you have [uv installed](https://docs.astral.sh/uv/getting-started/installation/):
+
+```bash
+uvx flyte-skills install
+```
+
+That copies all 21 skills into whichever harness directories it finds on your machine —
+no arguments needed. (`pip install flyte-agent-plugins` then `flyte-agent-plugins install` works the
+same way.)
+
+| `--target` | User-level directory | Project-level (`--project`) | Read by |
+|---|---|---|---|
+| `agents` | `~/.agents/skills/` | `.agents/skills/` | Codex, Hermes (project), any harness following the convention |
+| `claude` | `~/.claude/skills/` | `.claude/skills/` | Claude Code |
+| `hermes` | `~/.hermes/skills/` | `.hermes/skills/` | Hermes |
+| `opencode` | `~/.config/opencode/skills/` | `.opencode/skills/` | opencode |
+| `pi` | `~/.pi/agent/skills/` | — | pi |
+
+`--target codex` still works as an alias for `agents` — it is the same directory.
+
+```bash
+uvx flyte-skills install --target claude --target hermes  # pick harnesses
+uvx flyte-skills install --target agents                  # cross-harness standard
+uvx flyte-skills install --dir ~/somewhere/skills         # any directory
+uvx flyte-skills install --project                        # this repo only
+uvx flyte-skills install --dry-run                        # preview, change nothing
+uvx flyte-skills install --force                          # overwrite existing copies
+uvx flyte-skills uninstall                                # remove them again
+uvx flyte-skills list                                     # list the bundled skills
+```
+
+> [!NOTE]
+> **This installs the skills, not the MCP servers.** The two servers that let Claude search
+> Flyte docs and act on your cluster ship with the **plugin**, not the CLI — see
+> [Install as a plugin](#install-as-a-plugin-claude-code-codex-and-antigravity) if you want them, or
+> [Adding the MCP servers elsewhere](#adding-the-mcp-servers-elsewhere) to wire them up by
+> hand.
+
+### Adding the MCP servers with the CLI
+
+`flyte-skills install` deliberately writes skills only. To add the servers too, use `flyte-agent-plugins`:
+
+```bash
+uvx flyte-agent-plugins mcp install                               # claude/codex on PATH
+uvx flyte-agent-plugins mcp install --target claude --scope user  # one harness, one scope
+uvx flyte-agent-plugins mcp install --server flyte-docs           # just the docs server
+uvx flyte-agent-plugins mcp install --dry-run                     # print commands only
+uvx flyte-agent-plugins mcp list                                  # what would be added
+uvx flyte-agent-plugins mcp uninstall                             # remove them again
+```
+
+This drives each harness's own CLI (`claude mcp add-json`, `codex mcp add`) rather than
+editing config files, so the harness owns its format and nothing else in your config is at
+risk. It therefore needs `claude` or `codex` on your PATH, and covers only those two —
+opencode, pi, and Hermes have no equivalent command, so use
+[Adding the MCP servers elsewhere](#adding-the-mcp-servers-elsewhere) for those.
+
+Two things worth knowing before you run it. These servers are **tools the agent can call**,
+not inert markdown: `flyte-docs` sends your search queries to a Union-operated endpoint,
+and `flyte-cluster` gets control-plane access to your cluster. And installing
+`flyte-cluster` does not make it work — it needs `uv` and a Flyte login.
+
+**Harness-agnostic installs.** `--target agents` writes to `~/.agents/skills/`, the
+convention shared across agent CLIs, so any harness honouring it picks the skills up
+without a harness-specific flag. `--dir <path>` writes them anywhere else you like — both
+work the same with `--project`, `--dry-run`, and `uninstall`.
+
+**Two packages.** `flyte-skills` and `flyte-agent-plugins` carry the same 21 skills, so
+every `install` command above works under either name. They differ in one thing: only
+`flyte-agent-plugins` ships the `mcp` subcommand, so reach for it when you want the MCP
+servers too. To pin a version,
+`uvx --from flyte-skills==<version> flyte-skills install`.
+
+## Install as a plugin (Claude Code, Codex, and Antigravity)
+
+Installing the plugin instead of the skills gets you the same 21 skills **plus** both MCP
+servers, which are declared in `plugins/flyte/.mcp.json`.
+
+### Claude Code
 
 ```
 /plugin marketplace add flyteorg/flyte-agent-plugins
 /plugin install flyte@flyte-agent-plugins
 ```
 
-### Install a specific version
-
-The `flyteorg/flyte-agent-plugins` shorthand tracks the default branch. To pin the marketplace to a
-specific version, add it with the full git URL and append `#<ref>` — a **tag or branch
-name** (bare commit SHAs are not supported; to pin an exact commit, tag it first):
+The `flyteorg/flyte-agent-plugins` shorthand tracks the default branch. To pin the
+marketplace to a specific version, add it with the full git URL and append `#<ref>` — a
+**tag or branch name** (bare commit SHAs are not supported; to pin an exact commit, tag it
+first):
 
 ```
 /plugin marketplace add https://github.com/flyteorg/flyte-agent-plugins.git#<tag-or-branch>
@@ -32,24 +115,6 @@ To switch to a different version later, remove and re-add the marketplace:
 /plugin marketplace add https://github.com/flyteorg/flyte-agent-plugins.git#<other-ref>
 ```
 
-## Install with other agent harnesses
-
-The skills are plain [Agent Skills](https://agentskills.io) (`SKILL.md` + YAML
-frontmatter), so they work in any harness that supports the standard.
-
-> **Only Claude Code gets the MCP servers automatically.** They are declared in
-> `plugins/flyte/.mcp.json`, which Claude Code reads by convention. Every other harness
-> installs the **skills only** — you can still wire the servers up by hand in a few lines,
-> see [Adding the MCP servers elsewhere](#adding-the-mcp-servers-elsewhere).
-
-| Harness | Skills | MCP servers |
-|---|---|---|
-| Claude Code | all 14 | both, automatically |
-| Codex CLI | all 14 | none — add manually |
-| Hermes | per-skill | none — add manually |
-| opencode | all 14 | none — add manually |
-| pi | all 14 | none — add manually |
-
 ### OpenAI Codex CLI
 
 Codex reads this repo's marketplace catalog and the per-plugin
@@ -61,17 +126,55 @@ codex plugin marketplace add flyteorg/flyte-agent-plugins            # or --ref 
 
 Then browse and install the plugins via `/plugins` inside Codex.
 
-Codex plugins *can* bundle MCP servers (via an `mcpServers` field pointing at an
-`.mcp.json`), but this one deliberately does not: our `.mcp.json` uses
-`${CLAUDE_PLUGIN_ROOT}` to locate the local launcher script, and Codex does not expand it
-([openai/codex#22842](https://github.com/openai/codex/issues/22842)), so the local server
-would fail to start. Add the servers manually instead — the hosted one needs no path and
-works fine.
+Both MCP servers come with it: `.codex-plugin/plugin.json` carries an `mcpServers` field
+pointing at the same `.mcp.json` Claude Code reads. (The key is spelled `mcpServers`, not
+the `mcp_servers` the Codex docs show — the manifest struct is `camelCase`,
+[openai/codex#22105](https://github.com/openai/codex/issues/22105).) Neither server needs a
+path expanded, so `${CLAUDE_PLUGIN_ROOT}` — which Codex does not expand,
+[openai/codex#22842](https://github.com/openai/codex/issues/22842) — never comes up.
+
+### Google Antigravity
+
+Install the plugin from PyPI — the skills and both MCP servers come with it:
+
+```
+agy plugin install "$(uvx flyte-agent-plugins path)"
+```
+
+Or from a clone of this repo:
+
+```
+git clone https://github.com/flyteorg/flyte-agent-plugins.git
+agy plugin install ./flyte-agent-plugins/plugins/flyte
+```
+
+To update, run the install again. `agy plugin uninstall flyte` removes it.
+
+## Harness-native installs
+
+The skills are plain [Agent Skills](https://agentskills.io) (`SKILL.md` + YAML
+frontmatter), so they work in any harness that supports the standard. `flyte-agent-plugins
+install` above covers all of them; each harness also has its own installer, which is what you
+want when you would rather track the repo than a release, or to install a single skill
+rather than all 21.
+
+| Harness | Skills | MCP servers | `flyte-agent-plugins install` |
+|---|---|---|---|
+| Claude Code | all 21 | both, automatically | `--target claude` |
+| Codex CLI | all 21 | both, automatically | `--target agents` |
+| Antigravity | all 21 | both, via the plugin | `--target agents --project` |
+| Hermes | per-skill | none — add manually | `--target hermes` |
+| opencode | all 21 | none — add manually | `--target opencode` |
+| pi | all 21 | none — add manually | `--target pi` |
 
 ### Hermes
 
-Install individual skills by their repo path (Hermes installs from the default
-branch; ref pinning is not supported):
+`flyte-agent-plugins install --target hermes` writes all 21 into `~/.hermes/skills/`, which Hermes
+auto-discovers with no registration step. Add `--project` for `<repo>/.hermes/skills/` —
+project skills need `hermes skills trust` before first use.
+
+To install skills individually instead, use their repo path (Hermes installs from the
+default branch; ref pinning is not supported):
 
 ```
 hermes skills install flyteorg/flyte-agent-plugins/plugins/flyte/skills/<skill-name>
@@ -84,9 +187,9 @@ hermes skills install flyteorg/flyte-agent-plugins/plugins/flyte/skills/flyte-de
 ### opencode
 
 opencode discovers `SKILL.md` folders in `.opencode/skills/` (project) and
-`~/.config/opencode/skills/` (global). The easiest install is the
-[`skills` CLI](https://github.com/vercel-labs/skills), which reads this repo's
-marketplace manifest:
+`~/.config/opencode/skills/` (global). Besides `flyte-agent-plugins install --target opencode`,
+the [`skills` CLI](https://github.com/vercel-labs/skills) reads this repo's marketplace
+manifest:
 
 ```
 npx skills add flyteorg/flyte-agent-plugins          # interactive skill + agent selection
@@ -105,8 +208,9 @@ pi install https://github.com/flyteorg/flyte-agent-plugins           # default b
 pi install git:github.com/flyteorg/flyte-agent-plugins@<tag>         # pinned to a tag/commit
 ```
 
-(Alternatively, clone the repo into `~/.pi/agent/skills/` — pi discovers nested
-`SKILL.md` folders recursively.)
+(Alternatively, `flyte-agent-plugins install --target pi`, or clone the repo into
+`~/.pi/agent/skills/` — pi discovers nested `SKILL.md` folders recursively.)
+
 
 ## Skills
 
@@ -114,9 +218,10 @@ pi install git:github.com/flyteorg/flyte-agent-plugins@<tag>         # pinned to
 
 | Skill | Description |
 |-------|-------------|
-| [`flyte-deploy-aws`](plugins/flyte/skills/flyte-deploy-aws) | Deploy a Flyte v2 (`flyte-binary`) cluster on AWS from scratch — EKS + S3 + RDS PostgreSQL + AWS Load Balancer Controller + `helm`, with optional TLS (ACM, incl. cross-account DNS) and Okta/OIDC SSO. |
-| [`deploy-flyte-kind`](plugins/flyte/skills/deploy-flyte-kind) | Deploy a Flyte v2 (`flyte-binary`) cluster on `kind` — on your local machine or a cloud VM (DigitalOcean, AWS EC2, or GCP), backed by a hosted PostgreSQL (Supabase/external) and object store (S3/R2), with optional OIDC auth via Traefik + oauth2-proxy. |
+| [`flyte-deploy-aws`](plugins/flyte/skills/flyte-deploy-aws) | Deploy a Flyte 2 (`flyte-binary`) cluster on AWS from scratch — EKS + S3 + RDS PostgreSQL + AWS Load Balancer Controller + `helm`, with optional TLS (ACM, incl. cross-account DNS) and Okta/OIDC SSO. |
+| [`deploy-flyte-kind`](plugins/flyte/skills/deploy-flyte-kind) | Deploy a Flyte 2 (`flyte-binary`) cluster on `kind` — on your local machine or a DigitalOcean droplet (for AWS EC2 or GCP VMs, see `deploy-flyte-kind-vm`), backed by a hosted PostgreSQL (Supabase/external) and object store (S3/R2), with optional OIDC auth via Traefik + oauth2-proxy. |
 | [`deploy-flyte-kind-vm`](plugins/flyte/skills/deploy-flyte-kind-vm) | Provision a host (local or a fresh DigitalOcean / AWS EC2 / GCP VM), install the tooling, and run the kind Flyte deploy on it with access tunneled back to your machine. |
+| [`deploy-flyte-core-kind`](plugins/flyte/skills/deploy-flyte-core-kind) | Deploy the **split** `flyte-core` chart on `kind` with an image built from your own checkout — every service as its own Deployment, in-cluster PostgreSQL + MinIO, one Traefik origin, no registry and no cloud account. For chart development and pre-EKS testing. |
 | [`start-dex-local`](plugins/flyte/skills/start-dex-local) | Deploy Dex as an in-cluster OIDC provider for testing kind-based Flyte auth with no cloud account or real users. |
 
 ### SDK / Workflow Authoring
@@ -147,6 +252,7 @@ Convert existing Flyte 1 (`flytekit`) code to Flyte 2. Distilled from the offici
 | [`flyte-migrate-control-flow`](plugins/flyte/skills/flyte-migrate-control-flow) | Replace `conditional()` with native `if`/`else`, `@dynamic` with plain Python loops, `on_failure` with `try`/`except`, and `map_task` with `flyte.map` / `asyncio.gather`. |
 | [`flyte-migrate-data-io`](plugins/flyte/skills/flyte-migrate-data-io) | Migrate data types & I/O: `FlyteFile`/`FlyteDirectory`→`flyte.io.File`/`Dir`, `StructuredDataset`→`flyte.io.DataFrame`, dataclasses/Pydantic as task I/O. |
 | [`flyte-migrate-ml`](plugins/flyte/skills/flyte-migrate-ml) | Migrate ML workloads (training, HPO, GPU/deep learning, batch inference, end-to-end pipelines) and the new-in-v2 patterns (real-time serving, apps, sandboxed execution) they unlock. |
+| [`flyte-migrate-slurm`](plugins/flyte/skills/flyte-migrate-slurm) | Migrate Slurm (`sbatch`/`srun`) workloads: `#SBATCH` pragmas → `TaskEnvironment` config, job arrays → `flyte.map`, `--dependency` chains → plain Python, multi-node `srun` → `ClusteredTaskEnvironment`, `--requeue` → retries/checkpoints/spot. |
 
 Example:
 
@@ -154,7 +260,7 @@ Example:
 /plugin install flyte@flyte-agent-plugins
 ```
 
-Then ask Claude to "deploy a Flyte v2 cluster on AWS", or invoke a skill directly with
+Then ask Claude to "deploy a Flyte 2 cluster on AWS", or invoke a skill directly with
 `/flyte:flyte-deploy-aws`.
 
 ## Bundled MCP servers
@@ -164,35 +270,50 @@ Installing the plugin registers **two MCP servers**, split so nothing is duplica
 | Server | Tools | Needs |
 |---|---|---|
 | **`flyte-docs`** (hosted HTTP) | 3 `search` — Flyte SDK examples, docs examples, `llms.txt` | nothing at all |
-| **`flyte-cluster`** (local stdio) | 13 control-plane — run/inspect tasks, manage runs, apps, triggers | `uv`, plus a Flyte login |
+| **`flyte-cluster`** (local stdio) | 29 control-plane — tasks, runs, actions, logs, apps, triggers, projects, secrets, conditions, `whoami` | `uv`, plus a Flyte login |
 
 `flyte-docs` is a read-only, unauthenticated server **operated by Union**, so search works
 the moment you install — no setup, no corpus, no `uv`. Your search queries do leave your
-machine; set `FLYTE_MCP_LOCAL_SEARCH=1` to serve search from a local corpus instead
-(~120 MB cached under `~/.flyte/mcp`).
+machine.
 
-`flyte-cluster` is tenant-agnostic: it calls `flyte.init_from_config()`, so it acts on the same
-control plane your `flyte` CLI is authenticated against. **A cluster is optional** — it
-starts either way and offers nothing until one is reachable, so the plugin still works
-while you are deploying your first cluster. The tools appear once you are logged in
-(run `/reload-plugins`, or restart Claude Code — the choice is made at startup).
+`flyte-cluster` is the SDK's own `flyte-mcp` entry point, run straight from PyPI with
+`uvx` — nothing is vendored here:
 
-Test it end-to-end — this spawns the server exactly as Claude Code does, handshakes, and
-reports which mode it landed in:
+```
+uvx --from "flyte[mcp]==2.6.10" flyte-mcp --transport stdio \
+  --tool-groups task,run,action,logs,app,trigger,project,secret,condition,identity \
+  --no-init-from-config
+```
+
+`2.6.10` caps `mcp<2`; earlier releases than `2.5.18` can resolve `mcp` 2.0.0 and die at import.
+Pinning the version keeps tool metadata and behavior reproducible for users and reviewers. The
+`search` groups are left out on purpose — `flyte-docs` already serves them hosted, and
+enabling them here shallow-clones ~120 MB into `~/.flyte/mcp` on first launch.
+
+It is tenant-agnostic. The bundled command uses `--no-init-from-config`, so an
+unconfigured client gets a clean MCP error instead of the server starting an interactive
+login on its JSON-RPC stdout. Set `FLYTE_MCP_PROJECT` and `FLYTE_MCP_DOMAIN` in the MCP
+environment, or have calls supply `project` and `domain`, before using cluster tools.
+**A cluster is optional** — the tools are still registered while you are deploying your
+first cluster, and calls then report the missing target rather than breaking the protocol.
+
+Test it end-to-end — this spawns the server exactly as a client does, handshakes, lists the
+tools, and makes one real read-only call:
 
 ```
 python3 scripts/smoke_test_mcp.py
 ```
 
-Override the automatic tool choice with `FLYTE_MCP_TOOL_GROUPS` / `FLYTE_MCP_TOOLS`, and
-scope with `FLYTE_MCP_CONFIG`, `FLYTE_MCP_PROJECT`, `FLYTE_MCP_DOMAIN`,
-`FLYTE_MCP_{TASK,APP,TRIGGER}_ALLOWLIST`, or `FLYTE_MCP_LOCAL_SEARCH` — see the plugin
-[README](plugins/flyte/README.md).
+Change what is served by editing `args` in `plugins/flyte/.mcp.json` (`--tool-groups`,
+`--tools`, `--read-only`), and scope it with `FLYTE_MCP_PROJECT` / `FLYTE_MCP_DOMAIN` — see
+the plugin [README](plugins/flyte/README.md).
 
 ### Adding the MCP servers elsewhere
 
-Codex, Hermes, opencode, and pi all support MCP — this plugin just doesn't configure it
-for them. Wiring it up yourself is a few lines.
+Hermes, opencode, and pi all support MCP — this plugin just doesn't configure it for them.
+(Claude Code, Codex, and Antigravity get both servers from the plugin; use these snippets only if you
+want them configured globally rather than per-plugin.) Wiring it up yourself is a few
+lines.
 
 **`flyte-docs`** is plain remote HTTP with no auth and no local dependency, so it drops
 into any harness:
@@ -219,16 +340,42 @@ mcp_servers:
 
 pi uses the same `mcpServers` shape in `~/.pi/agent/mcp.json`.
 
-**`flyte-cluster`** is a local stdio process, so point your harness at the launcher script
-with an absolute path — there is no `${CLAUDE_PLUGIN_ROOT}` outside Claude Code:
+**`flyte-cluster`** is a local stdio process, but it is just the SDK's published
+`flyte-mcp` entry point run with `uvx` — no checkout, no path, so it is as portable as the
+hosted one. It needs [`uv`](https://docs.astral.sh/uv/) on `PATH`, a usable Flyte login,
+and a project/domain supplied by `FLYTE_MCP_PROJECT` / `FLYTE_MCP_DOMAIN` or the tool call:
 
-```
-uv run --quiet --no-project /abs/path/to/plugins/flyte/scripts/flyte_mcp_stdio.py
+```toml
+# Codex — ~/.codex/config.toml
+[mcp_servers.flyte-cluster]
+command = "uvx"
+args = ["--from", "flyte[mcp]==2.6.10", "flyte-mcp", "--transport", "stdio",
+        "--tool-groups", "task,run,action,logs,app,trigger,project,secret,condition,identity",
+        "--no-init-from-config"]
 ```
 
-Once [flyte-sdk#1319](https://github.com/flyteorg/flyte-sdk/pull/1319) ships, that becomes
-`uvx --from "flyte[mcp]" flyte-mcp --transport stdio` — no path, no script, portable
-everywhere.
+```json
+// opencode — opencode.json
+{ "mcp": { "flyte-cluster": { "type": "local", "enabled": true,
+  "command": ["uvx", "--from", "flyte[mcp]==2.6.10", "flyte-mcp", "--transport", "stdio",
+              "--tool-groups",
+              "task,run,action,logs,app,trigger,project,secret,condition,identity",
+              "--no-init-from-config"] } } }
+```
+
+```yaml
+# Hermes — ~/.hermes/config.yaml
+mcp_servers:
+  flyte-cluster:
+    command: "uvx"
+    args: ["--from", "flyte[mcp]==2.6.10", "flyte-mcp", "--transport", "stdio",
+           "--tool-groups", "task,run,action,logs,app,trigger,project,secret,condition,identity",
+           "--no-init-from-config"]
+```
+
+Drop `--tool-groups` to get everything, including the three `search` tools — but then the
+server shallow-clones a ~120 MB corpus into `~/.flyte/mcp` on first launch, which is exactly
+what `flyte-docs` exists to avoid.
 
 ## Layout
 
@@ -238,19 +385,28 @@ All skills live in the single `flyte` plugin:
 .claude-plugin/marketplace.json             # marketplace catalog
 package.json                                # pi package manifest (pi.skills)
 plugins/flyte/.claude-plugin/plugin.json    # Claude Code plugin manifest
-plugins/flyte/.codex-plugin/plugin.json     # Codex plugin manifest
-plugins/flyte/.mcp.json                     # the two bundled MCP servers (Claude Code)
-plugins/flyte/scripts/flyte_mcp_stdio.py    # stdio adapter that .mcp.json launches
+plugins/flyte/.codex-plugin/plugin.json     # Codex plugin manifest (points at .mcp.json)
+plugins/flyte/.mcp.json                     # the two bundled MCP servers
+plugins/flyte/plugin.json                   # Antigravity plugin manifest
+plugins/flyte/mcp_config.json               # the same servers, in Antigravity's schema
 plugins/flyte/skills/<skill>/SKILL.md
+packaging/build.py                          # fans plugins/flyte out into the npm + PyPI packages
+packaging/verify.py                         # builds every distribution and proves it installs
 scripts/smoke_test_mcp.py                   # end-to-end check of the local MCP server
 ```
 
-Each harness consumes a different part of this. Claude Code and Codex read the plugin
-manifests, so the **plugin name** matters to them. Hermes, opencode, and pi install skills
+Each harness consumes a different part of this. Claude Code, Codex, and Antigravity read
+the plugin manifests, so the **plugin name** matters to them. Hermes, opencode, and pi install skills
 by **directory path**, so `plugins/flyte/skills/…` is their interface.
 
-The `.mcp.json` server is Claude Code-specific; the skills themselves stay portable across
-harnesses.
+`.mcp.json` is shared by Claude Code (which finds it by convention) and Codex (which is
+pointed at it by `.codex-plugin/plugin.json`). Antigravity needs its own copy in
+`mcp_config.json`, kept in step by `packaging/verify.py`; the skills themselves stay
+portable across every harness.
+
+The PyPI packages are a fourth consumer: `packaging/build.py` vendors the whole
+`plugins/flyte/` tree into each one, which is how `flyte-agent-plugins install` can write the
+skills into any of these directories from a single release.
 
 ## Contributing
 
@@ -259,3 +415,8 @@ It is picked up automatically by the `flyte` plugin, the Codex manifest, and the
 `pi.skills` entry — no marketplace edit needed. Add a row to the skills table above. Keep
 everything generic — no account IDs, hostnames, credentials, or other environment-specific
 values.
+
+The published PyPI packages are generated from `plugins/flyte/`, so a new skill ships
+with the next release automatically. Run `python packaging/verify.py` to check it packages
+and installs cleanly. To cut a release, follow [`RELEASING.md`](RELEASING.md); for how the
+packages are built, see [`packaging/README.md`](packaging/README.md).
